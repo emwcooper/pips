@@ -6,7 +6,7 @@ const DIFFICULTY_KEY = 'pips.difficulty.v1';
 export function loadDifficulty() {
   try {
     const v = localStorage.getItem(DIFFICULTY_KEY);
-    if (v === 'easy' || v === 'medium' || v === 'hard') return v;
+    if (v === 'easy' || v === 'medium' || v === 'hard' || v === 'logic') return v;
   } catch (_) {}
   return 'easy';
 }

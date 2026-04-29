@@ -31,39 +31,55 @@ export function solveLinear(puzzle) {
  * @param {number} maxDepth
  * @returns {import('./types.js').SolverResult}
  */
-export function solveBounded(puzzle, maxDepth = 0) {
+export function solveBounded(puzzle, maxDepth = 0, opts = {}) {
   const state = initSolverState(puzzle);
+  if (opts.trace) state._trace = true;
   applyRegionClips(state, puzzle);
-  if (state.contradiction) return { status: 'contradiction' };
+  if (state.contradiction) {
+    const r = { status: 'contradiction' };
+    if (opts.trace) r.contradictionRule = state._contradictionRule || 'applyRegionClips';
+    return r;
+  }
   for (let s = 0; s < puzzle.slots.length; s++) recomputeSlotDominoesWithSlots(state, s, puzzle.slots);
   state.dirtyCells.clear();
   state.dirtySlots.clear();
-  return solveFromState(state, puzzle, maxDepth);
+  const result = solveFromState(state, puzzle, maxDepth);
+  if (opts.trace && result.status === 'contradiction' && state._contradictionRule) {
+    result.contradictionRule = state._contradictionRule;
+  }
+  return result;
 }
 
 /** Run the fixed-point propagation loop on a (mutable) state. Returns 'solved' | 'stalled' | 'contradiction'. */
 function runPropagation(state, puzzle) {
+  const trace = state._trace;
+  function bail(rule) {
+    if (trace) state._contradictionRule = rule;
+    return 'contradiction';
+  }
   let pass = 0;
   while (true) {
     if (++pass > 200) return 'stalled';
     let changed = false;
     if (regionEqRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('regionEq');
     if (regionNeqRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('regionNeq');
     if (regionSumRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('regionSum');
     if (slotDominoRebuildIfDirty(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('slotRebuild');
     if (emptySlotRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('emptySlot');
     if (bagExhaustionRule(state, puzzle)) changed = true;
     if (forcedCoverRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('forcedCover');
     if (forcedDominoOnPlacedSlot(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('forcedDominoOnPlaced');
+    if (forcedSlotForDominoRule(state, puzzle)) changed = true;
+    if (state.contradiction) return bail('forcedSlotForDomino');
     if (valueSupportRule(state, puzzle)) changed = true;
-    if (state.contradiction) return 'contradiction';
+    if (state.contradiction) return bail('valueSupport');
     if (!changed) break;
   }
   return solvedStatus(state, puzzle) ? 'solved' : 'stalled';
@@ -279,7 +295,42 @@ function placeSlot(state, s, slots) {
   if (state.slotState[s] === 2) return false;
   if (state.slotState[s] === 0) { state.contradiction = true; return false; }
   state.slotState[s] = 2;
-  // All other alive slots touching either cell must be eliminated.
+
+  // If the slot's domino set is already a singleton, commit the bag decrement
+  // immediately. This prevents the subtle bug where two slots get force-placed
+  // in the same propagation pass while both wanting the same singleton-bag
+  // domino — without immediate commit, the bag stays at 1 throughout
+  // forcedCoverRule and the conflict isn't detected until the wrong slot
+  // tries to assign.
+  const set = state.slotDominoes[s];
+  if (set.size === 1) {
+    const k = set.values().next().value;
+    if (state.bag[k] <= 0) { state.contradiction = true; return false; }
+    if (!state._dominoAssigned) state._dominoAssigned = new Uint8Array(slots.length);
+    state._dominoAssigned[s] = 1;
+    state.bag[k] -= 1;
+    // Narrow cell domains to the domino's two values.
+    const x = Math.floor(k / 7);
+    const y = k % 7;
+    const both = (1 << x) | (1 << y);
+    const [aCell, bCell] = slots[s];
+    setCellDomain(state, aCell, state.cellDomain[aCell] & both);
+    if (!state.contradiction) setCellDomain(state, bCell, state.cellDomain[bCell] & both);
+    if (state.contradiction) return false;
+    // If the bag is now exhausted, drop the key from other (alive) slots'
+    // candidate sets so a parallel forcedCover can't try to use it.
+    if (state.bag[k] === 0) {
+      for (let other = 0; other < slots.length; other++) {
+        if (other === s) continue;
+        if (state.slotState[other] !== 1) continue;
+        if (state.slotDominoes[other].has(k)) {
+          state.slotDominoes[other].delete(k);
+          state.dirtySlots.add(other);
+        }
+      }
+    }
+  }
+
   const [a, b] = slots[s];
   for (const other of state.cellSlots[a]) {
     if (other !== s && state.slotState[other] === 1) eliminateSlot(state, other);
@@ -296,6 +347,10 @@ function recomputeSlotDominoesWithSlots(state, slotIdx, slots) {
     state.slotDominoes[slotIdx].clear();
     return true;
   }
+  // Placed slots' candidate sets are committed by placeSlot — recomputing
+  // would drop the assigned key once the bag has been decremented to 0,
+  // which would falsely look like an empty-set contradiction.
+  if (state.slotState[slotIdx] === 2) return false;
   const [a, b] = slots[slotIdx];
   const da = state.cellDomain[a];
   const db = state.cellDomain[b];
@@ -434,10 +489,14 @@ function bagExhaustionRule(state, puzzle) {
   for (let k = 0; k < 49; k++) {
     if (state.bag[k] !== 0) continue;
     for (let s = 0; s < puzzle.slots.length; s++) {
+      // Skip placed slots — their domino is already committed; clearing it
+      // from their candidate set would falsely fire forcedDominoOnPlacedSlot's
+      // empty-set contradiction.
+      if (state.slotState[s] === 2) continue;
       if (state.slotDominoes[s].has(k)) {
         state.slotDominoes[s].delete(k);
         changed = true;
-        state.dirtySlots.add(s); // re-evaluate downstream
+        state.dirtySlots.add(s);
       }
     }
   }
@@ -447,13 +506,18 @@ function bagExhaustionRule(state, puzzle) {
 function forcedCoverRule(state, puzzle) {
   let changed = false;
   for (let c = 0; c < puzzle.cells.length; c++) {
-    // Is this cell already covered by a placed slot?
     let covered = false;
     let aliveCount = 0;
     let aliveSlot = -1;
     for (const s of state.cellSlots[c]) {
       if (state.slotState[s] === 2) { covered = true; break; }
-      if (state.slotState[s] === 1) { aliveCount++; aliveSlot = s; }
+      // A slot is "viable" only if it's alive AND still has at least one
+      // candidate domino. emptySlotRule will mark zero-candidate slots
+      // eliminated next pass, but inside forcedCover we may have just
+      // emptied a slot via in-loop bag commit; treat those as eliminated.
+      if (state.slotState[s] === 1 && state.slotDominoes[s].size > 0) {
+        aliveCount++; aliveSlot = s;
+      }
     }
     if (covered) continue;
     if (aliveCount === 0) { state.contradiction = true; return changed; }
@@ -470,6 +534,10 @@ function forcedDominoOnPlacedSlot(state, puzzle) {
   for (let s = 0; s < puzzle.slots.length; s++) {
     if (state.slotState[s] !== 2) continue;
     const set = state.slotDominoes[s];
+    // Already-committed slots have their domino tracked separately; an empty
+    // set here only means "we already decremented the bag and rebuild dropped
+    // it" — not a real contradiction. Skip.
+    if (state._dominoAssigned && state._dominoAssigned[s]) continue;
     if (set.size === 0) { state.contradiction = true; return changed; }
     if (set.size !== 1) continue;
     // Determined domino. Decrement bag (only once; re-running this rule is idempotent
@@ -495,6 +563,37 @@ function forcedDominoOnPlacedSlot(state, puzzle) {
     if (setCellDomain(state, b, state.cellDomain[b] & both)) changed = true;
     if (state.contradiction) return changed;
     changed = true;
+  }
+  return changed;
+}
+
+function forcedSlotForDominoRule(state, puzzle) {
+  // For each domino key d with remaining bag count k > 0, find the alive slots
+  // whose candidate sets currently include d. If exactly k such slots exist,
+  // all of them must host d (we need k placements of d, and only those k
+  // slots can host it). Place them and narrow their candidate sets to {d}.
+  let changed = false;
+  for (let d = 0; d < 49; d++) {
+    const k = state.bag[d];
+    if (k <= 0) continue;
+    const candidates = [];
+    for (let s = 0; s < puzzle.slots.length; s++) {
+      if (state.slotState[s] === 0) continue;
+      if (state.slotDominoes[s].has(d)) candidates.push(s);
+    }
+    if (candidates.length === k) {
+      for (const s of candidates) {
+        if (state.slotState[s] !== 2) {
+          if (placeSlot(state, s, puzzle.slots)) changed = true;
+          if (state.contradiction) return changed;
+        }
+        if (state.slotDominoes[s].size > 1) {
+          state.slotDominoes[s] = new Set([d]);
+          state.dirtySlots.add(s);
+          changed = true;
+        }
+      }
+    }
   }
   return changed;
 }

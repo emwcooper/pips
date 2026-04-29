@@ -12,19 +12,24 @@ import { generatePuzzle } from '../puzzle/generator.js';
 
 const TARGET_QUEUE_DEPTH = 4;
 
-/** @type {Array<{puzzle: any, durationMs: number, attempts: number}>} */
-const queue = [];
-const pendingRequests = []; // resolves when a puzzle is ready
+// One queue per difficulty so switching modes doesn't throw away pre-generated
+// puzzles for the mode you came from.
+/** @type {Record<string, Array<{puzzle: any, durationMs: number, attempts: number}>>} */
+const queues = { easy: [], medium: [], hard: [], logic: [] };
+const pendingRequests = []; // each waiting on currentDifficulty's queue
 let generating = false;
 let currentDifficulty = 'easy';
 
+function curQueue() { return queues[currentDifficulty] || (queues[currentDifficulty] = []); }
+
 function postQueueStatus() {
-  self.postMessage({ type: 'queue', size: queue.length });
+  self.postMessage({ type: 'queue', size: curQueue().length });
 }
 
 function deliverNext() {
-  if (queue.length === 0 || pendingRequests.length === 0) return;
-  const out = queue.shift();
+  const q = curQueue();
+  if (q.length === 0 || pendingRequests.length === 0) return;
+  const out = q.shift();
   const resolve = pendingRequests.shift();
   resolve(out);
   postQueueStatus();
@@ -33,12 +38,15 @@ function deliverNext() {
 async function generateLoop() {
   if (generating) return;
   generating = true;
-  while (queue.length < TARGET_QUEUE_DEPTH) {
+  // Generate until the *current* difficulty's queue is full. Switching mode
+  // breaks out of this naturally on the next iteration since we re-read
+  // currentDifficulty each time.
+  while (curQueue().length < TARGET_QUEUE_DEPTH) {
     try {
       const diff = currentDifficulty;
       const out = generatePuzzle(Math.random, { difficulty: diff });
       out.difficulty = diff;
-      queue.push(out);
+      queues[diff].push(out);
       postQueueStatus();
       deliverNext();
     } catch (e) {
@@ -55,8 +63,9 @@ function ensureGenerating() {
 }
 
 function handleRequest(reply) {
-  if (queue.length > 0) {
-    const out = queue.shift();
+  const q = curQueue();
+  if (q.length > 0) {
+    const out = q.shift();
     reply(out);
     postQueueStatus();
   } else {
@@ -71,8 +80,8 @@ self.onmessage = (ev) => {
   if (msg.type === 'setDifficulty') {
     if (msg.difficulty && msg.difficulty !== currentDifficulty) {
       currentDifficulty = msg.difficulty;
-      // Drop any queued puzzles of the previous difficulty.
-      queue.length = 0;
+      // Don't clear queues — each difficulty keeps its own pre-generated
+      // puzzles so switching back is instant.
       postQueueStatus();
       ensureGenerating();
     }

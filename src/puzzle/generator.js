@@ -14,13 +14,17 @@ import { solveBounded, bruteForceCount } from './solver.js';
 import { decodeKey, allDominoKeys } from './domino.js';
 
 const SHAPES_BY_DIFFICULTY = {
-  easy:   [[4, 4], [4, 5], [5, 4], [5, 5]],
-  medium: [[5, 5], [5, 6], [6, 5], [6, 6]],
-  // Hard sticks to 5x6 / 6x5 / 6x6 — bigger grids make the sum-based brute
-  // force prohibitively slow (~tens of seconds per puzzle). Hard difficulty
-  // comes from weaker constraints (low singleton bias, aggressive weakening),
+  // More rectangular variety per difficulty. Mixing 1:1 squares with non-1:1
+  // rectangles keeps the visual interesting.
+  easy:   [[4, 4], [4, 5], [5, 4], [5, 5], [3, 6], [6, 3], [3, 5], [5, 3]],
+  medium: [[5, 5], [5, 6], [6, 5], [6, 6], [4, 6], [6, 4], [4, 7], [7, 4]],
+  // Hard sticks to 5-6 wide grids — larger ones make the sum-based brute
+  // force prohibitively slow. Hard difficulty comes from weaker constraints,
   // not raw cell count.
-  hard:   [[5, 6], [6, 5], [6, 6]],
+  hard:   [[5, 6], [6, 5], [6, 6], [4, 7], [7, 4]],
+  // Logic mode uses smaller-to-medium shapes; the linear-solvability bar is
+  // strict so we want generation to converge.
+  logic:  [[4, 5], [5, 4], [5, 5], [4, 6], [6, 4], [5, 6], [6, 5]],
 };
 
 // Cap repeats in the bag. With multiplicity=1, the tiling is unique given values
@@ -53,10 +57,15 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   //   removeFraction  — max fraction of bounding-box cells removed (smaller
   //                     puzzles are easier).
   const diffSettings = {
-    easy:   { singletonBias: 0.80, preferSum: true,  removeFraction: 0.45, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: true  },
-    medium: { singletonBias: 0.40, preferSum: false, removeFraction: 0.25, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false },
-    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.20, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false },
-  }[difficulty] || { singletonBias: 0.40, preferSum: false, removeFraction: 0.25, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false };
+    easy:   { singletonBias: 0.80, preferSum: true,  removeFraction: 0.55, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: true,  verifier: 'unique' },
+    medium: { singletonBias: 0.40, preferSum: false, removeFraction: 0.40, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'unique' },
+    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.30, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false, verifier: 'unique' },
+    // Logic mode: every puzzle must be solvable by pure forward propagation
+    // (rules 1-11 to fixed point), no guessing. Uses solveBounded(depth=0)
+    // as the verifier. Starts from a high-singleton, no-refinement base so
+    // most random structures pass the strict linear-solvability check.
+    logic:  { singletonBias: 1.00, preferSum: true,  removeFraction: 0.40, shapes: SHAPES_BY_DIFFICULTY.logic,  disableMerge: true,  disableWeaken: true,  verifier: 'linear' },
+  }[difficulty] || { singletonBias: 0.40, preferSum: false, removeFraction: 0.25, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'unique' };
   // Default verifier: brute-force "exactly one solution". Generation is slow
   // (hundreds of ms to tens of seconds per puzzle) but produces well-defined
   // puzzles regardless of difficulty class. The worker maintains a background
@@ -65,8 +74,14 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   const depth = opts.lookaheadDepth ?? 1;
   const diag = opts.diag || { structureNull: 0, verifyFail: 0, diversityFail: 0 };
 
+  // The diffSettings can override the verifier choice.
+  const effectiveVerifier = diffSettings.verifier || verifier;
   const verify = (puzzle) => {
-    if (verifier === 'lookahead') {
+    if (effectiveVerifier === 'linear') {
+      // Pure forward propagation only — no case-splitting allowed.
+      return solveBounded(puzzle, 0).status === 'solved';
+    }
+    if (effectiveVerifier === 'lookahead') {
       return solveBounded(puzzle, depth).status === 'solved';
     }
     const sols = bruteForceCount(puzzle, 2);

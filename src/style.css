@@ -218,7 +218,10 @@ button:active { background: #e7dfb7; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  padding: 14%;
+  /* Use --cell-relative padding so pip sizes stay constant when the domino is
+     rotated. (Percentage padding resolves against the domino's width, which
+     differs between horizontal and vertical orientations.) */
+  padding: calc(0.14 * var(--cell));
   gap: 0;
 }
 .domino.horizontal .half:first-child { border-right: 1.5px solid var(--domino-border); }
