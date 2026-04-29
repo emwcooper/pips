@@ -16,7 +16,10 @@ import { decodeKey, allDominoKeys } from './domino.js';
 const SHAPES_BY_DIFFICULTY = {
   easy:   [[4, 4], [4, 5], [5, 4], [5, 5]],
   medium: [[5, 5], [5, 6], [6, 5], [6, 6]],
-  hard:   [[6, 6], [6, 7], [7, 6], [7, 7]],
+  // Hard avoids 7x7 — generation is uncomfortably slow on it (~tens of seconds
+  // per puzzle when the brute-force verifier has to chew through weakened
+  // constraints). 6x6/6x7 already give good "hard" puzzles.
+  hard:   [[6, 6], [6, 7], [7, 6]],
 };
 
 // Cap repeats in the bag. With multiplicity=1, the tiling is unique given values
@@ -51,7 +54,7 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   const diffSettings = {
     easy:   { singletonBias: 0.80, preferSum: true,  removeFraction: 0.45, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: true  },
     medium: { singletonBias: 0.40, preferSum: false, removeFraction: 0.25, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false },
-    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.10, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false },
+    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.20, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false },
   }[difficulty] || { singletonBias: 0.40, preferSum: false, removeFraction: 0.25, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false };
   // Default verifier: brute-force "exactly one solution". Generation is slow
   // (hundreds of ms to tens of seconds per puzzle) but produces well-defined
@@ -577,40 +580,39 @@ function weakerCandidates(region, cellValue) {
     if (constraintSatisfied(cand, vals)) out.push(cand);
   };
 
-  // Allowed inequality bounds: lt:n for n in [2..6], gt:n for n in [0..4].
-  // Excludes trivial constraints (`<7`, `>-1`) and the silly-looking `<1`/`>5`
-  // (which pin to 0 / 6 — `sum:0` / `sum:6` say the same thing more clearly).
-  const LT_MIN = 2, LT_MAX = 6;
-  const GT_MIN = 0, GT_MAX = 4;
+  // `lt:N` and `gt:N` are sum-based: lt:N ⇔ region-sum < N, gt:N ⇔ region-sum > N.
+  // Bounds:
+  //   lt:N valid when S < N ≤ maxSum (and N ≥ 2 so we don't show "<1").
+  //   gt:N valid when 0 ≤ N < S (so we don't show ">-1").
+  const S = vals.reduce((s, v) => s + v, 0);
+  const maxSum = 6 * vals.length;
   if (c.kind === 'eq') {
-    pushIfValid({ kind: 'sum', n: vals.reduce((s, v) => s + v, 0) });
-    const v = vals[0];
-    for (let n = Math.max(v + 1, LT_MIN); n <= LT_MAX; n++) pushIfValid({ kind: 'lt', n });
-    for (let n = GT_MIN; n < Math.min(v, GT_MAX + 1); n++) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'sum', n: S });
+    for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
+    for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
   } else if (c.kind === 'neq') {
-    pushIfValid({ kind: 'sum', n: vals.reduce((s, v) => s + v, 0) });
-    const maxv = Math.max(...vals), minv = Math.min(...vals);
-    for (let n = Math.max(maxv + 1, LT_MIN); n <= LT_MAX; n++) pushIfValid({ kind: 'lt', n });
-    for (let n = GT_MIN; n < Math.min(minv, GT_MAX + 1); n++) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'sum', n: S });
+    for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
+    for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
   } else if (c.kind === 'sum') {
-    const maxv = Math.max(...vals), minv = Math.min(...vals);
-    for (let n = Math.max(maxv + 1, LT_MIN); n <= LT_MAX; n++) pushIfValid({ kind: 'lt', n });
-    for (let n = GT_MIN; n < Math.min(minv, GT_MAX + 1); n++) pushIfValid({ kind: 'gt', n });
+    for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
+    for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
   } else if (c.kind === 'lt') {
-    for (let n = c.n + 1; n <= LT_MAX; n++) pushIfValid({ kind: 'lt', n });
+    for (let n = c.n + 1; n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
   } else if (c.kind === 'gt') {
-    for (let n = c.n - 1; n >= GT_MIN; n--) pushIfValid({ kind: 'gt', n });
+    for (let n = c.n - 1; n >= 0; n--) pushIfValid({ kind: 'gt', n });
   }
   return out;
 }
 
 function constraintSatisfied(c, vals) {
+  const sum = vals.reduce((s, v) => s + v, 0);
   switch (c.kind) {
-    case 'sum': return vals.reduce((s, v) => s + v, 0) === c.n;
+    case 'sum': return sum === c.n;
     case 'eq': return vals.every((v) => v === vals[0]);
     case 'neq': return new Set(vals).size === vals.length;
-    case 'lt': return vals.every((v) => v < c.n);
-    case 'gt': return vals.every((v) => v > c.n);
+    case 'lt': return sum < c.n;
+    case 'gt': return sum > c.n;
     case 'blank': return true;
   }
   return false;

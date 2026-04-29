@@ -11,12 +11,13 @@ export function checkSolution(puzzle, cellValue) {
     const vals = region.cells.map((id) => cellValue[id]);
     const c = region.constraint;
     let ok = true;
+    const sum = vals.reduce((s, v) => s + v, 0);
     switch (c.kind) {
-      case 'sum': ok = vals.reduce((s, v) => s + v, 0) === c.n; break;
+      case 'sum': ok = sum === c.n; break;
       case 'eq': ok = vals.every((v) => v === vals[0]); break;
       case 'neq': ok = new Set(vals).size === vals.length; break;
-      case 'lt': ok = vals.every((v) => v < c.n); break;
-      case 'gt': ok = vals.every((v) => v > c.n); break;
+      case 'lt': ok = sum < c.n; break;
+      case 'gt': ok = sum > c.n; break;
       case 'blank': ok = true; break;
     }
     if (!ok) return { ok: false, reason: `region ${region.id} fails constraint ${describeConstraint(c)}` };

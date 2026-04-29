@@ -139,6 +139,17 @@ export function startApp() {
     statusEl.textContent = '';
     statusEl.className = 'status';
     if (durationMs != null) console.log(`generated in ${Math.round(durationMs)}ms`);
+    // Debug helper: in DevTools you can read window.__pipsDebug to inspect the
+    // current puzzle's regions, constraints, and known solution.
+    window.__pipsDebug = {
+      puzzle,
+      solution: Array.from(puzzle.solution.cellValue),
+      regions: puzzle.regions.map((r) => ({
+        id: r.id,
+        constraint: r.constraint,
+        cells: r.cells.map((c) => ({ id: c, row: puzzle.cells[c].row, col: puzzle.cells[c].col, value: puzzle.solution.cellValue[c] })),
+      })),
+    };
   }
 
   // ---------- piece operations (move-in-place, never recreate the element) ----------

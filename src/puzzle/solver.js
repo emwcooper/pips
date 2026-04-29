@@ -322,17 +322,9 @@ function recomputeSlotDominoesWithSlots(state, slotIdx, slots) {
 // ---------------------------------------------------------------------------
 
 function applyRegionClips(state, puzzle) {
-  for (const region of puzzle.regions) {
-    const c = region.constraint;
-    let mask = FULL_DOMAIN;
-    if (c.kind === 'lt') mask = ltMask(c.n);
-    else if (c.kind === 'gt') mask = gtMask(c.n);
-    if (mask === FULL_DOMAIN) continue;
-    for (const cell of region.cells) {
-      setCellDomain(state, cell, state.cellDomain[cell] & mask);
-      if (state.contradiction) return;
-    }
-  }
+  // No per-cell clipping for sum/lt/gt — those are all whole-region sum
+  // constraints, handled by regionSumRule. Other constraint kinds (eq/neq)
+  // are also sum-independent and handled by their own rules.
 }
 
 function regionEqRule(state, puzzle) {
@@ -375,16 +367,19 @@ function regionNeqRule(state, puzzle) {
 }
 
 function regionSumRule(state, puzzle) {
+  // Handles sum / lt / gt as whole-region sum bounds.
   let changed = false;
   for (const region of puzzle.regions) {
-    if (region.constraint.kind !== 'sum') continue;
-    const target = region.constraint.n;
+    const k = region.constraint.kind;
+    let targetMin, targetMax;
+    if (k === 'sum') { targetMin = region.constraint.n; targetMax = region.constraint.n; }
+    else if (k === 'lt') { targetMin = 0; targetMax = region.constraint.n - 1; }
+    else if (k === 'gt') { targetMin = region.constraint.n + 1; targetMax = 6 * region.cells.length; }
+    else continue;
     const cells = region.cells;
-    // Compute total lo and total hi.
     let totalLo = 0, totalHi = 0;
     for (const c of cells) { totalLo += lowest(state.cellDomain[c]); totalHi += highest(state.cellDomain[c]); }
-    if (target < totalLo || target > totalHi) { state.contradiction = true; return changed; }
-    // For each cell, prune values that can't be extended.
+    if (targetMax < totalLo || targetMin > totalHi) { state.contradiction = true; return changed; }
     for (const c of cells) {
       const dlo = lowest(state.cellDomain[c]);
       const dhi = highest(state.cellDomain[c]);
@@ -393,22 +388,10 @@ function regionSumRule(state, puzzle) {
       let dom = state.cellDomain[c];
       for (let v = 0; v <= 6; v++) {
         if (!(dom & (1 << v))) continue;
-        // Removing this cell's contribution and re-adding v:
-        // others must be able to sum to target - v.
-        // Min others = otherLo (if v !== dlo we don't actually replace... bounds shift).
-        // Use a simpler bound: min of others alone = totalLo - dlo (cell's current min); we're testing if v is feasible.
-        // Need others-sum in [target - v - 0, target - v] — actually feasibility: others-sum can range in [otherSumLo, otherSumHi] where:
-        //   otherSumLo = sum over others of lowest(domain)
-        //   otherSumHi = sum over others of highest(domain)
-        // Since we already have totalLo and totalHi, and this cell contributes [dlo, dhi]:
-        //   otherSumLo = totalLo - dlo, otherSumHi = totalHi - dhi (these are the bounds when this cell takes its lo/hi).
-        // Wait: that's wrong. For others' bounds when summed independently:
-        //   otherSumLo = totalLo - dlo  (true, since this cell's contribution to totalLo was dlo).
-        //   otherSumHi = totalHi - dhi  (true).
-        // But this cell's *actual* value is v; the others' bounds don't depend on v, they depend on others' domains.
-        // So: feasibility: target - v ∈ [otherSumLo, otherSumHi] = [totalLo - dlo, totalHi - dhi].
-        const need = target - v;
-        if (need < (totalLo - dlo) || need > (totalHi - dhi)) {
+        // v is feasible iff some otherSum in [otherLo, otherHi] makes
+        // v + otherSum land in [targetMin, targetMax]:
+        //    targetMin - otherHi ≤ v ≤ targetMax - otherLo
+        if (v < targetMin - otherHi || v > targetMax - otherLo) {
           dom &= ~(1 << v);
         }
       }
@@ -564,17 +547,10 @@ export function bruteForceCount(puzzle, cap = 2, nodeBudget = 200000) {
   let nodes = 0;
   let aborted = false;
 
-  // Apply region clips for an upper bound on per-cell values.
+  // No per-cell clip from sum/lt/gt — those are whole-region constraints
+  // checked by regionSatisfied() at full assignment.
   const clip = new Uint8Array(N);
   clip.fill(FULL_DOMAIN);
-  for (const region of puzzle.regions) {
-    const c = region.constraint;
-    let mask = FULL_DOMAIN;
-    if (c.kind === 'lt') mask = ltMask(c.n);
-    else if (c.kind === 'gt') mask = gtMask(c.n);
-    if (mask === FULL_DOMAIN) continue;
-    for (const cell of region.cells) clip[cell] &= mask;
-  }
 
   const solutions = [];
 
@@ -606,12 +582,47 @@ export function bruteForceCount(puzzle, cap = 2, nodeBudget = 200000) {
   }
 
   function checkRegionsPartial() {
-    // Best-effort early prune: any region whose cells are all assigned must satisfy constraint.
     for (const region of puzzle.regions) {
+      const c = region.constraint;
+      let assignedSum = 0;
+      let unassignedCount = 0;
       let allAssigned = true;
-      for (const c of region.cells) if (!covered[c]) { allAssigned = false; break; }
-      if (!allAssigned) continue;
-      if (!regionSatisfied(region, cellValue)) return false;
+      for (const id of region.cells) {
+        if (covered[id]) assignedSum += cellValue[id];
+        else { allAssigned = false; unassignedCount++; }
+      }
+      if (allAssigned) {
+        if (!regionSatisfied(region, cellValue)) return false;
+        continue;
+      }
+      // Partial-sum pruning: assigned cells already commit some sum; the
+      // remaining cells can each contribute 0..6.
+      const minTotal = assignedSum;
+      const maxTotal = assignedSum + 6 * unassignedCount;
+      if (c.kind === 'sum') {
+        if (c.n < minTotal || c.n > maxTotal) return false;
+      } else if (c.kind === 'lt') {
+        if (minTotal >= c.n) return false;
+      } else if (c.kind === 'gt') {
+        if (maxTotal <= c.n) return false;
+      } else if (c.kind === 'neq') {
+        // Already-fixed values can't repeat in this region.
+        const seen = new Set();
+        for (const id of region.cells) {
+          if (covered[id]) {
+            if (seen.has(cellValue[id])) return false;
+            seen.add(cellValue[id]);
+          }
+        }
+      } else if (c.kind === 'eq') {
+        let firstVal = -1;
+        for (const id of region.cells) {
+          if (covered[id]) {
+            if (firstVal < 0) firstVal = cellValue[id];
+            else if (cellValue[id] !== firstVal) return false;
+          }
+        }
+      }
     }
     return true;
   }
@@ -659,12 +670,13 @@ export function bruteForceCount(puzzle, cap = 2, nodeBudget = 200000) {
 function regionSatisfied(region, cellValue) {
   const c = region.constraint;
   const vals = region.cells.map((id) => cellValue[id]);
+  const sum = vals.reduce((s, v) => s + v, 0);
   switch (c.kind) {
-    case 'sum': return vals.reduce((s, v) => s + v, 0) === c.n;
+    case 'sum': return sum === c.n;
     case 'eq': return vals.every((v) => v === vals[0]);
     case 'neq': return new Set(vals).size === vals.length;
-    case 'lt': return vals.every((v) => v < c.n);
-    case 'gt': return vals.every((v) => v > c.n);
+    case 'lt': return sum < c.n;
+    case 'gt': return sum > c.n;
     case 'blank': return true;
   }
   return true;
