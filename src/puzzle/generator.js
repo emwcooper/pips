@@ -16,10 +16,11 @@ import { decodeKey, allDominoKeys } from './domino.js';
 const SHAPES_BY_DIFFICULTY = {
   easy:   [[4, 4], [4, 5], [5, 4], [5, 5]],
   medium: [[5, 5], [5, 6], [6, 5], [6, 6]],
-  // Hard avoids 7x7 — generation is uncomfortably slow on it (~tens of seconds
-  // per puzzle when the brute-force verifier has to chew through weakened
-  // constraints). 6x6/6x7 already give good "hard" puzzles.
-  hard:   [[6, 6], [6, 7], [7, 6]],
+  // Hard sticks to 5x6 / 6x5 / 6x6 — bigger grids make the sum-based brute
+  // force prohibitively slow (~tens of seconds per puzzle). Hard difficulty
+  // comes from weaker constraints (low singleton bias, aggressive weakening),
+  // not raw cell count.
+  hard:   [[5, 6], [6, 5], [6, 6]],
 };
 
 // Cap repeats in the bag. With multiplicity=1, the tiling is unique given values
