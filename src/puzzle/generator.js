@@ -55,10 +55,10 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   // to fixed point, no guessing). Easy/Medium/Hard tune complexity through
   // grid size, singleton bias, and refinement settings.
   const diffSettings = {
-    easy:   { singletonBias: 0.65, preferSum: true,  removeFraction: 0.50, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: false, verifier: 'linear' },
-    medium: { singletonBias: 0.35, preferSum: false, removeFraction: 0.40, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' },
-    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.30, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false, verifier: 'linear' },
-  }[difficulty] || { singletonBias: 0.35, preferSum: false, removeFraction: 0.40, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' };
+    easy:   { singletonBias: 0.65, preferSum: true,  removeFraction: 0.62, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: false, verifier: 'linear' },
+    medium: { singletonBias: 0.35, preferSum: false, removeFraction: 0.52, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' },
+    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.42, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false, verifier: 'linear' },
+  }[difficulty] || { singletonBias: 0.35, preferSum: false, removeFraction: 0.52, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' };
   // Default verifier: brute-force "exactly one solution". Generation is slow
   // (hundreds of ms to tens of seconds per puzzle) but produces well-defined
   // puzzles regardless of difficulty class. The worker maintains a background
@@ -203,8 +203,9 @@ function randomShapeMask(W, H, rng, removeFraction = 0.25) {
     const c = Math.floor(rng() * W);
     const seedIdx = r * W + c;
     if (!mask[seedIdx]) continue;
-    // Cluster size: heavy bias toward small clusters; occasional bigger one.
-    const clusterMax = Math.min(removeCount - removedSoFar, 1 + Math.floor(Math.pow(rng(), 1.8) * 4));
+    // Cluster size: 1–6 cells, modestly biased toward smaller. Bigger
+    // clusters carve out chunkier gaps in the silhouette.
+    const clusterMax = Math.min(removeCount - removedSoFar, 1 + Math.floor(Math.pow(rng(), 1.3) * 6));
     const stack = [seedIdx];
     let clusterCount = 0;
     while (stack.length && clusterCount < clusterMax) {
