@@ -15,7 +15,7 @@ const TARGET_QUEUE_DEPTH = 4;
 // One queue per difficulty so switching modes doesn't throw away pre-generated
 // puzzles for the mode you came from.
 /** @type {Record<string, Array<{puzzle: any, durationMs: number, attempts: number}>>} */
-const queues = { easy: [], medium: [], hard: [], logic: [] };
+const queues = { easy: [], medium: [], hard: [] };
 const pendingRequests = []; // each waiting on currentDifficulty's queue
 let generating = false;
 let currentDifficulty = 'easy';
