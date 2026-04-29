@@ -295,8 +295,6 @@ function growRegions(cells, cellAtRC, W, H, rng, diffSettings) {
 
   // Random target sizes — singleton bias depends on difficulty.
   const sb = diffSettings ? diffSettings.singletonBias : 0.40;
-  // Distribute the remaining (1 - sb) probability mass across sizes 2..5
-  // with a falling tail (50/30/15/5).
   const remaining = 1 - sb;
   const t1 = sb;
   const t2 = t1 + remaining * 0.50;
@@ -340,22 +338,58 @@ function growRegions(cells, cellAtRC, W, H, rng, diffSettings) {
     if (region[seed] >= 0) continue;
     const target = pickTargetSize();
     region[seed] = regionId;
-    const frontier = neighbors(seed).filter((n) => region[n] < 0);
+    // Tip-biased random walk: with high probability extend from the most
+    // recently added cell (snake-like growth), otherwise pick any cell in
+    // the region (occasional branch). This produces L, S, T, snake, and
+    // straight-line shapes far more often than the old flood-fill, which
+    // tended toward compact blobs.
+    const memberCells = [seed];
     let size = 1;
-    while (size < target && frontier.length) {
-      const idx = Math.floor(rng() * frontier.length);
-      const next = frontier.splice(idx, 1)[0];
-      if (region[next] >= 0) continue;
-      region[next] = regionId;
-      size++;
-      for (const nn of neighbors(next)) {
-        if (region[nn] < 0 && !frontier.includes(nn)) frontier.push(nn);
+    let lastDir = null; // {dr, dc} of last extension; bias toward continuing
+    while (size < target) {
+      // Choose source cell to extend from.
+      const fromIdx = rng() < 0.78 ? memberCells.length - 1 : Math.floor(rng() * memberCells.length);
+      const fromCell = memberCells[fromIdx];
+      const cands = neighbors(fromCell).filter((n) => region[n] < 0);
+      if (cands.length === 0) {
+        // Dead-end at chosen cell. Try other cells in the region, prefer recent.
+        let extended = false;
+        for (let i = memberCells.length - 1; i >= 0; i--) {
+          const alt = memberCells[i];
+          const altCands = neighbors(alt).filter((n) => region[n] < 0);
+          if (altCands.length === 0) continue;
+          const pick = altCands[Math.floor(rng() * altCands.length)];
+          region[pick] = regionId;
+          memberCells.push(pick);
+          extended = true;
+          break;
+        }
+        if (!extended) break;
+      } else {
+        // Bias toward continuing in the previous direction (longer straight
+        // segments / snakes). If lastDir matches one of cands, weight it.
+        let pickIdx = -1;
+        if (lastDir && rng() < 0.55) {
+          for (let i = 0; i < cands.length; i++) {
+            const cd = cells[cands[i]];
+            const cf = cells[fromCell];
+            if (cd.row - cf.row === lastDir.dr && cd.col - cf.col === lastDir.dc) {
+              pickIdx = i; break;
+            }
+          }
+        }
+        if (pickIdx < 0) pickIdx = Math.floor(rng() * cands.length);
+        const next = cands[pickIdx];
+        const cf = cells[fromCell], cn = cells[next];
+        lastDir = { dr: cn.row - cf.row, dc: cn.col - cf.col };
+        region[next] = regionId;
+        memberCells.push(next);
       }
+      size = memberCells.length;
     }
     regionId++;
   }
 
-  // Stamp region ids onto cells.
   for (let c = 0; c < N; c++) cells[c].region = region[c];
   return { region, count: regionId };
 }
