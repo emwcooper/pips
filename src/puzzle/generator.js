@@ -599,17 +599,22 @@ function weakerCandidates(region, cellValue) {
     pushIfValid({ kind: 'sum', n: S });
     for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
     for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'blank' });
   } else if (c.kind === 'neq') {
     pushIfValid({ kind: 'sum', n: S });
     for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
     for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'blank' });
   } else if (c.kind === 'sum') {
     for (let n = Math.max(2, S + 1); n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
     for (let n = 0; n < S; n++) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'blank' });
   } else if (c.kind === 'lt') {
     for (let n = c.n + 1; n <= maxSum; n++) pushIfValid({ kind: 'lt', n });
+    pushIfValid({ kind: 'blank' });
   } else if (c.kind === 'gt') {
     for (let n = c.n - 1; n >= 0; n--) pushIfValid({ kind: 'gt', n });
+    pushIfValid({ kind: 'blank' });
   }
   return out;
 }
