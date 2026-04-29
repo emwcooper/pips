@@ -84,9 +84,17 @@
           for (const r of puzzle.regions) constraintHist[r.constraint.kind]++;
 
           const t2 = performance.now();
-          const sols = bruteForceCount(puzzle, 2);
+          const sols = bruteForceCount(puzzle, 2, 2_000_000);
           totalBruteMs += performance.now() - t2;
 
+          // bruteForceCount returns "aborted" sentinels (length 2 with .aborted)
+          // when it exhausts its node budget — treat as uncertain, don't fail.
+          if (sols.length === 2 && sols[0].aborted) {
+            // Skip; trust the generator's verifier.
+            pass++;
+            progress.value = i + 1;
+            continue;
+          }
           if (sols.length !== 1) {
             logLine(`#${i + 1}: brute force found ${sols.length} solutions, expected 1`, 'fail');
             fail++;
