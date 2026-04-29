@@ -1,0 +1,271 @@
+:root {
+  --cell: 56px;
+  --bg: #faf6ef;
+  --board-bg: #ece5d4;
+  --grid-line: rgba(0, 0, 0, 0.10);
+  --region-line: #333;
+  --region-line-strong: #222;
+  --domino-bg: #fffaf0;
+  --domino-border: #2a2a2a;
+  --pip: #1a1a1a;
+  --accent: #b65b35;
+  --good: #2c8a4a;
+  --bad: #c14a3a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: #222;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 18px;
+}
+.header h1 {
+  margin: 0;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.05em;
+}
+.header-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  min-width: 56px;
+  text-align: right;
+  opacity: 0.75;
+}
+button {
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button:hover { background: #f3edd7; }
+button:active { background: #e7dfb7; }
+
+.difficulty {
+  display: inline-flex;
+  border: 1px solid #999;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.difficulty .diff-btn {
+  border: none;
+  border-radius: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+.difficulty .diff-btn + .diff-btn { border-left: 1px solid #999; }
+.difficulty .diff-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.difficulty .diff-btn[aria-pressed="true"]:hover { background: var(--accent); color: #fff; }
+
+.status {
+  min-height: 28px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  margin: 8px 0;
+}
+.status.good { color: var(--good); }
+.status.bad { color: var(--bad); }
+
+.board-wrap {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  margin: 0 auto;
+  padding: 12px;
+  background: var(--board-bg);
+  border-radius: 12px;
+}
+
+.board {
+  position: relative;
+  display: grid;
+  background: transparent;
+  /* grid-template set inline */
+}
+.board::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cell {
+  width: var(--cell);
+  height: var(--cell);
+  position: relative;
+  background: #fffdf6;
+}
+.cell.blocked { background: transparent; visibility: hidden; }
+
+/* thin grid lines on every cell */
+.cell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+  pointer-events: none;
+}
+
+/* region edges drawn as overlaid spans on the appropriate sides */
+.cell .edge-overlay {
+  position: absolute; inset: 0; pointer-events: none;
+}
+.cell .edge-overlay > span { position: absolute; background: var(--region-line); }
+.cell .edge-overlay .e-top    { top: -1px; left: 0; right: 0; height: 2px; }
+.cell .edge-overlay .e-right  { top: 0; right: -1px; bottom: 0; width: 2px; }
+.cell .edge-overlay .e-bottom { bottom: -1px; left: 0; right: 0; height: 2px; }
+.cell .edge-overlay .e-left   { top: 0; left: -1px; bottom: 0; width: 2px; }
+/* Edges that border the outside of the grid are thicker + darker so the
+   board outline reads clearly against region boundaries. Each boundary span
+   extends into the perpendicular axis (left/right for horizontal spans,
+   top/bottom for vertical spans) so corners fill without notches. */
+.cell .edge-overlay > span.boundary { background: #1a1a1a; z-index: 4; }
+.cell .edge-overlay .e-top.boundary    { top: -2px;    left: -2px;   right: -2px;  height: 4px; }
+.cell .edge-overlay .e-right.boundary  { right: -2px;  top: -2px;    bottom: -2px; width: 4px; }
+.cell .edge-overlay .e-bottom.boundary { bottom: -2px; left: -2px;   right: -2px;  height: 4px; }
+.cell .edge-overlay .e-left.boundary   { left: -2px;   top: -2px;    bottom: -2px; width: 4px; }
+
+.region-label {
+  position: absolute;
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 700;
+  color: #1a1a1a;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  padding: 0 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.slot-highlight {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed var(--accent);
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 100ms;
+}
+.slot-highlight.show { opacity: 1; }
+
+.tray {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 16px auto 0;
+  padding: 12px;
+  min-height: calc(5 * var(--cell) + 40px);
+  border-radius: 12px;
+  background: #f0e7cd;
+  overflow: visible;
+}
+
+.domino {
+  position: absolute;
+  display: flex;
+  background: var(--domino-bg);
+  border: 1.5px solid var(--domino-border);
+  border-radius: 6px;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  width: calc(2 * var(--cell));
+  height: var(--cell);
+  z-index: 2;
+}
+/* Once placed on the board, dominoes are translucent so the region color
+   underneath remains clearly visible. Tray + drag visuals stay fully opaque. */
+.board > .domino {
+  background: rgba(255, 250, 240, 0.50);
+}
+.domino.vertical { flex-direction: column; width: var(--cell); height: calc(2 * var(--cell)); }
+.domino:active { cursor: grabbing; }
+.domino.dragging { cursor: grabbing; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.20); z-index: 1000; }
+
+.domino .half {
+  flex: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 14%;
+  gap: 0;
+}
+.domino.horizontal .half:first-child { border-right: 1.5px solid var(--domino-border); }
+.domino.vertical .half:first-child { border-bottom: 1.5px solid var(--domino-border); }
+
+.pip {
+  background: var(--pip);
+  border-radius: 50%;
+  align-self: center;
+  justify-self: center;
+  width: 70%;
+  height: 70%;
+}
+
+.placed-domino {
+  position: absolute;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #666;
+  background: rgba(250, 246, 239, 0.85);
+}
+.loading.hidden { display: none; }
+
+.stats-panel {
+  position: fixed;
+  top: 0; right: 0; height: 100vh; width: 320px;
+  background: #fff;
+  border-left: 1px solid #d4cba8;
+  box-shadow: -4px 0 14px rgba(0, 0, 0, 0.08);
+  padding: 18px;
+  overflow-y: auto;
+  transform: translateX(0);
+  transition: transform 200ms;
+  z-index: 10;
+}
+.stats-panel.hidden { transform: translateX(100%); pointer-events: none; }
+.stats-panel h2 { margin: 0 0 8px; font-size: 18px; }
+.stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+.stat-row span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+.histogram { margin-top: 10px; }
+.histogram svg { display: block; }
+.stats-actions { margin-top: 12px; }
+.stats-actions button { font-size: 12px; padding: 4px 8px; }

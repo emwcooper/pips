@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pips Self-Test</title>
+    <style>
+      body { font-family: monospace; padding: 16px; max-width: 960px; }
+      .pass { color: #2c8a4a; }
+      .fail { color: #c14a3a; font-weight: bold; }
+      pre { background: #f0f0f0; padding: 8px; overflow-x: auto; }
+      progress { width: 300px; }
+      .controls label { margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Pips self-test</h1>
+    <p>Generates N puzzles. Asserts: brute-force finds exactly 1 solution AND it matches the construction.</p>
+    <p class="controls">
+      <label>N: <input id="count" type="number" value="20" min="1" max="500" /></label>
+      <label>Verifier:
+        <select id="verifier">
+          <option value="unique" selected>unique</option>
+          <option value="lookahead">lookahead</option>
+        </select>
+      </label>
+      <label>Lookahead depth: <input id="depth" type="number" value="2" min="0" max="3" /></label>
+      <button id="run">Run</button>
+      <progress id="progress" max="20" value="0"></progress>
+    </p>
+    <div id="status"></div>
+    <pre id="log"></pre>
+    <script type="module">
+      import { generatePuzzle } from './src/puzzle/generator.js';
+      import { bruteForceCount } from './src/puzzle/solver.js';
+
+      const status = document.getElementById('status');
+      const log = document.getElementById('log');
+      const progress = document.getElementById('progress');
+
+      function logLine(s, cls) {
+        const span = document.createElement('span');
+        if (cls) span.className = cls;
+        span.textContent = s + '\n';
+        log.appendChild(span);
+      }
+
+      async function run() {
+        log.textContent = '';
+        status.textContent = '';
+        const N = parseInt(document.getElementById('count').value, 10) || 20;
+        const verifier = document.getElementById('verifier').value;
+        const depth = parseInt(document.getElementById('depth').value, 10) || 0;
+        progress.max = N;
+        progress.value = 0;
+
+        let pass = 0, fail = 0;
+        const startAll = performance.now();
+        let totalGenMs = 0, totalBruteMs = 0;
+        let attemptsTotal = 0;
+        const sizeHist = {};
+        const constraintHist = { sum: 0, eq: 0, neq: 0, each: 0, lt: 0, gt: 0, blank: 0 };
+
+        for (let i = 0; i < N; i++) {
+          await new Promise((r) => setTimeout(r, 0));
+
+          let puzzle, attempts, durationMs;
+          try {
+            const diff = (new URLSearchParams(location.search)).get('difficulty') || 'easy';
+            const out = generatePuzzle(Math.random, { verifier, lookaheadDepth: depth, difficulty: diff });
+            puzzle = out.puzzle;
+            attempts = out.attempts;
+            durationMs = out.durationMs;
+          } catch (e) {
+            if (fail < 3) logLine(`#${i + 1}: GENERATION FAILED: ${e.message}`, 'fail');
+            else if (fail === 3) logLine('… (further generation failures suppressed)', 'fail');
+            fail++;
+            progress.value = i + 1;
+            continue;
+          }
+          attemptsTotal += attempts;
+          totalGenMs += durationMs;
+          const sizeKey = `${puzzle.cells.length}cells/${puzzle.regions.length}reg`;
+          sizeHist[sizeKey] = (sizeHist[sizeKey] || 0) + 1;
+          for (const r of puzzle.regions) constraintHist[r.constraint.kind]++;
+
+          const t2 = performance.now();
+          const sols = bruteForceCount(puzzle, 2);
+          totalBruteMs += performance.now() - t2;
+
+          if (sols.length !== 1) {
+            logLine(`#${i + 1}: brute force found ${sols.length} solutions, expected 1`, 'fail');
+            fail++;
+            progress.value = i + 1;
+            continue;
+          }
+
+          // Verify the constructed solution is what brute force found.
+          let match = true;
+          for (let c = 0; c < puzzle.cells.length; c++) {
+            if (sols[0].cellValue[c] !== puzzle.solution.cellValue[c]) { match = false; break; }
+          }
+          if (!match) {
+            logLine(`#${i + 1}: brute solution disagrees with constructed solution`, 'fail');
+            fail++;
+            progress.value = i + 1;
+            continue;
+          }
+
+          pass++;
+          progress.value = i + 1;
+        }
+
+        const totalAll = performance.now() - startAll;
+        logLine('');
+        logLine(`Passed:  ${pass}/${N}`, pass === N ? 'pass' : 'fail');
+        logLine(`Failed:  ${fail}/${N}`, fail === 0 ? 'pass' : 'fail');
+        if (pass > 0) {
+          logLine(`Avg gen attempts: ${(attemptsTotal / pass).toFixed(1)}`);
+          logLine(`Avg gen time: ${(totalGenMs / pass).toFixed(0)}ms`);
+          logLine(`Avg brute-force verify time: ${(totalBruteMs / pass).toFixed(1)}ms`);
+        }
+        logLine(`Total wall: ${totalAll.toFixed(0)}ms`);
+        logLine('Size histogram:');
+        for (const k of Object.keys(sizeHist).sort()) logLine(`  ${k}: ${sizeHist[k]}`);
+        logLine('Constraint kinds across all regions:');
+        for (const k of Object.keys(constraintHist)) if (constraintHist[k]) logLine(`  ${k}: ${constraintHist[k]}`);
+      }
+
+      document.getElementById('run').addEventListener('click', run);
+
+      // Auto-run when ?auto=1[&n=N][&verifier=unique|lookahead][&depth=K]
+      const params = new URLSearchParams(location.search);
+      if (params.get('auto') === '1') {
+        if (params.get('n')) document.getElementById('count').value = params.get('n');
+        if (params.get('verifier')) document.getElementById('verifier').value = params.get('verifier');
+        if (params.get('depth')) document.getElementById('depth').value = params.get('depth');
+        run().then(() => {
+          // Mark completion so headless drivers know to dump.
+          document.body.setAttribute('data-done', '1');
+        });
+      }
+    </script>
+  </body>
+</html>

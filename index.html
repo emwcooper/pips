@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pips</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <h1>Pips</h1>
+        <div class="header-controls">
+          <div class="difficulty" role="radiogroup" aria-label="Difficulty">
+            <button class="diff-btn" data-diff="easy" type="button">Easy</button>
+            <button class="diff-btn" data-diff="medium" type="button">Medium</button>
+            <button class="diff-btn" data-diff="hard" type="button">Hard</button>
+          </div>
+          <span id="timer" class="timer">0:00</span>
+          <button id="new-puzzle" type="button">New Puzzle</button>
+          <button id="toggle-stats" type="button">Stats</button>
+        </div>
+      </header>
+      <main>
+        <div id="status" class="status" aria-live="polite"></div>
+        <div id="board-wrap" class="board-wrap">
+          <div id="board" class="board"></div>
+          <div id="loading" class="loading">Generating puzzle…</div>
+        </div>
+        <div id="tray" class="tray"></div>
+      </main>
+      <aside id="stats-panel" class="stats-panel hidden" aria-hidden="true"></aside>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
