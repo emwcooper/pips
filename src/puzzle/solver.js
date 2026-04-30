@@ -34,7 +34,7 @@ export function solveLinear(puzzle) {
 export function solveBounded(puzzle, maxDepth = 0, opts = {}) {
   const state = initSolverState(puzzle);
   if (opts.trace) state._trace = true;
-  if (opts.count) state._counters = { narrows: 0, eliminations: 0, placements: 0 };
+  if (opts.count) state._counters = { narrows: 0, eliminations: 0, placements: 0, currentRun: 0, maxRun: 0 };
   applyRegionClips(state, puzzle);
   if (state.contradiction) {
     const r = { status: 'contradiction' };
@@ -48,7 +48,13 @@ export function solveBounded(puzzle, maxDepth = 0, opts = {}) {
   if (opts.trace && result.status === 'contradiction' && state._contradictionRule) {
     result.contradictionRule = state._contradictionRule;
   }
-  if (opts.count) result.counters = state._counters;
+  if (opts.count) {
+    // Capture the trailing run (after the last placement) into maxRun.
+    if (state._counters.currentRun > state._counters.maxRun) {
+      state._counters.maxRun = state._counters.currentRun;
+    }
+    result.counters = state._counters;
+  }
   return result;
 }
 
@@ -280,7 +286,7 @@ function setCellDomain(state, c, newDomain) {
   state.cellDomain[c] = newDomain;
   state.dirtyCells.add(c);
   for (const s of state.cellSlots[c]) state.dirtySlots.add(s);
-  if (state._counters) state._counters.narrows++;
+  if (state._counters) { state._counters.narrows++; state._counters.currentRun++; }
   return true;
 }
 
@@ -288,7 +294,7 @@ function eliminateSlot(state, s) {
   if (state.slotState[s] !== 1) return false;
   state.slotState[s] = 0;
   state.dirtySlots.add(s);
-  if (state._counters) state._counters.eliminations++;
+  if (state._counters) { state._counters.eliminations++; state._counters.currentRun++; }
   return true;
 }
 
@@ -296,7 +302,15 @@ function placeSlot(state, s, slots) {
   if (state.slotState[s] === 2) return false;
   if (state.slotState[s] === 0) { state.contradiction = true; return false; }
   state.slotState[s] = 2;
-  if (state._counters) state._counters.placements++;
+  if (state._counters) {
+    // Record the run that just finished (inferences since previous placement),
+    // then reset for the next run.
+    if (state._counters.currentRun > state._counters.maxRun) {
+      state._counters.maxRun = state._counters.currentRun;
+    }
+    state._counters.currentRun = 0;
+    state._counters.placements++;
+  }
 
   // If the slot's domino set is already a singleton, commit the bag decrement
   // immediately. This prevents the subtle bug where two slots get force-placed

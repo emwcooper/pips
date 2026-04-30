@@ -13,18 +13,24 @@ const BINS = [
   { label: '10m+', max: Infinity },
 ];
 
+const DIFFICULTY_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+
 export function renderStats(panel, onRequestNew) {
   clear(panel);
-  const s = computedStats();
-
   panel.appendChild(el('h2', {}, 'Stats'));
-  panel.appendChild(row('Wins', `${s.wins}`));
-  panel.appendChild(row('Give-ups', `${s.giveUps}`));
-  panel.appendChild(row('Win rate', s.winRate == null ? '—' : `${Math.round(s.winRate * 100)}%`));
-  panel.appendChild(row('Avg win time', s.avgMs == null ? '—' : formatMs(s.avgMs)));
-  panel.appendChild(row('Fastest win', s.fastestMs == null ? '—' : formatMs(s.fastestMs)));
 
-  panel.appendChild(el('div', { class: 'histogram' }, histogramSvg(s.winTimesMs)));
+  for (const diff of ['easy', 'medium', 'hard']) {
+    const s = computedStats(diff);
+    const section = el('div', { class: 'stats-section' });
+    section.appendChild(el('h3', { class: 'stats-section-title' }, DIFFICULTY_LABELS[diff]));
+    section.appendChild(row('Wins', `${s.wins}`));
+    section.appendChild(row('Give-ups', `${s.giveUps}`));
+    section.appendChild(row('Win rate', s.winRate == null ? '—' : `${Math.round(s.winRate * 100)}%`));
+    section.appendChild(row('Avg win time', s.avgMs == null ? '—' : formatMs(s.avgMs)));
+    section.appendChild(row('Fastest win', s.fastestMs == null ? '—' : formatMs(s.fastestMs)));
+    section.appendChild(el('div', { class: 'histogram' }, histogramSvg(s.winTimesMs)));
+    panel.appendChild(section);
+  }
 
   const actions = el('div', { class: 'stats-actions' });
   const reset = el('button', { type: 'button' }, 'Reset stats');

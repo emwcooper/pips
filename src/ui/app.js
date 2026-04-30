@@ -12,6 +12,7 @@ import { decodeKey } from '../puzzle/domino.js';
 import { generatePuzzle } from '../puzzle/generator.js';
 import { recordWin, recordGiveUp, loadDifficulty, saveDifficulty } from '../stats/storage.js';
 import { renderStats } from './stats.js';
+import { showCelebration } from './celebrate.js';
 import { clear } from './dom.js';
 
 export function startApp() {
@@ -20,6 +21,7 @@ export function startApp() {
   const statusEl = document.getElementById('status');
   const timerEl = document.getElementById('timer');
   const newBtn = document.getElementById('new-puzzle');
+  const clearBtn = document.getElementById('clear-all');
   const statsBtn = document.getElementById('toggle-stats');
   const statsPanel = document.getElementById('stats-panel');
   const loadingEl = document.getElementById('loading');
@@ -149,6 +151,8 @@ export function startApp() {
         constraint: r.constraint,
         cells: r.cells.map((c) => ({ id: c, row: puzzle.cells[c].row, col: puzzle.cells[c].col, value: puzzle.solution.cellValue[c] })),
       })),
+      state,
+      boardRenderInfo,
     };
   }
 
@@ -159,6 +163,8 @@ export function startApp() {
     const occupant = state.pieces.find((p) => p.placedSlot === slotIdx && p !== piece);
     if (occupant) {
       occupant.placedSlot = null;
+      occupant.locked = false;
+      occupant.el.classList.remove('locked');
       occupant.el.style.left = occupant.trayX + 'px';
       occupant.el.style.top = occupant.trayY + 'px';
       trayEl.appendChild(occupant.el);
@@ -175,6 +181,8 @@ export function startApp() {
 
   function returnPieceToTray(piece, trayPos) {
     piece.placedSlot = null;
+    piece.locked = false;
+    piece.el.classList.remove('locked');
     if (trayPos) {
       piece.trayX = trayPos.x;
       piece.trayY = trayPos.y;
@@ -184,6 +192,12 @@ export function startApp() {
     trayEl.appendChild(piece.el);
     // Re-evaluate status (a placed-piece may have just been pulled off after a win).
     checkComplete();
+  }
+
+  function toggleLock(piece) {
+    if (piece.placedSlot === null) return;
+    piece.locked = !piece.locked;
+    piece.el.classList.toggle('locked', piece.locked);
   }
 
   function rotatePiece(piece) {
@@ -218,9 +232,19 @@ export function startApp() {
         state.won = true;
         const elapsed = Date.now() - state.startedAt;
         stopTimer();
-        recordWin(elapsed);
-        statusEl.textContent = `Solved in ${formatMs(elapsed)}!`;
+        const winInfo = recordWin(elapsed, difficulty);
+        let msg = `Solved in ${formatMs(elapsed)}!`;
+        if (winInfo.totalWins >= 3) {
+          msg += `  ·  ${winInfo.percentile}th percentile (${difficulty})`;
+        }
+        statusEl.textContent = msg;
         statusEl.className = 'status good';
+        if (winInfo.isNewFastest) {
+          const text = winInfo.wasFirst
+            ? `First ${difficulty} solve!`
+            : `Fastest ${difficulty} ever!`;
+          showCelebration(text);
+        }
         if (!statsPanel.classList.contains('hidden')) renderStats(statsPanel, requestPuzzle);
       } else {
         statusEl.textContent = `Not quite — keep trying.`;
@@ -268,15 +292,31 @@ export function startApp() {
       if (!piece) return;
       rotatePiece(piece);
     },
+    onLockToggle: (pieceId) => {
+      const piece = state.pieces.find((p) => p.id === pieceId);
+      if (!piece) return;
+      toggleLock(piece);
+    },
   });
 
   // ---------- buttons / timer ----------
 
   newBtn.addEventListener('click', () => {
-    if (state && !state.won) recordGiveUp();
+    if (state && !state.won) recordGiveUp(difficulty);
     stopTimer();
     requestPuzzle();
   });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (!state) return;
+      const placed = state.pieces.filter((p) => p.placedSlot !== null);
+      if (placed.length === 0) return;
+      const unlockedPlaced = placed.filter((p) => !p.locked);
+      const targets = unlockedPlaced.length > 0 ? unlockedPlaced : placed;
+      for (const piece of targets) returnPieceToTray(piece);
+    });
+  }
 
   statsBtn.addEventListener('click', () => {
     if (statsPanel.classList.contains('hidden')) {
@@ -315,13 +355,14 @@ export function startApp() {
     btn.addEventListener('click', () => {
       const next = btn.dataset.diff;
       if (next === difficulty) return;
+      // Attribute any in-progress give-up to the difficulty being left, not the new one.
+      const previous = difficulty;
       difficulty = next;
       saveDifficulty(difficulty);
       paintDifficulty();
       // Tell the worker to drop its (now-stale) queue and re-generate.
       if (!workerErrored) worker.postMessage({ type: 'setDifficulty', difficulty });
-      // Treat current puzzle as a give-up if the player was mid-solve.
-      if (state && !state.won) recordGiveUp();
+      if (state && !state.won) recordGiveUp(previous);
       stopTimer();
       requestPuzzle();
     });
@@ -354,6 +395,7 @@ function newAppState(puzzle) {
         flipped: false,
         orientation: 'horizontal',
         placedSlot: null,
+        locked: false,
         trayX: (idx % COLS) * HSPACE + 12,
         trayY: Math.floor(idx / COLS) * VSPACE + 12,
         el: null,

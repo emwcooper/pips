@@ -45,6 +45,9 @@ function onPointerDown(ev) {
 
   const pieceId = target.dataset.id;
   const rect = target.getBoundingClientRect();
+  const piece = api.getPieceById(pieceId);
+  const placed = !!(piece && piece.placedSlot !== null);
+  const locked = !!(piece && piece.locked);
 
   drag = {
     pieceId,
@@ -61,6 +64,8 @@ function onPointerDown(ev) {
     pieceWidth: rect.width,
     pieceHeight: rect.height,
     dragging: false,
+    placed,
+    locked,
     boardRect: api.getBoardEl().getBoundingClientRect(),
     slots: api.getSlotsViewport(),
     cellSize: api.getCellSize(),
@@ -84,6 +89,9 @@ function onPointerMove(ev) {
   const moved = Math.hypot(dx, dy);
   if (!drag.dragging) {
     if (moved < CLICK_MOVE_THRESHOLD) return;
+    // Locked placed pieces refuse drag; pointer-up will fall through to a
+    // click that toggles the lock off.
+    if (drag.locked) return;
     enterDragMode();
   }
   positionDragEl(ev.clientX, ev.clientY);
@@ -165,7 +173,8 @@ function onPointerUp(ev) {
 
   const wasClick = !drag.dragging;
   if (wasClick) {
-    api.onRotate(drag.pieceId);
+    if (drag.placed) api.onLockToggle(drag.pieceId);
+    else api.onRotate(drag.pieceId);
     drag = null;
     return;
   }

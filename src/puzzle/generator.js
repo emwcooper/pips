@@ -17,7 +17,7 @@ const SHAPES_BY_DIFFICULTY = {
   // All difficulties now use linear-solvable verification ("Logic mode" of
   // the original design); Easy/Medium/Hard differ in grid size, singleton
   // bias, and refinement aggressiveness.
-  easy:   [[4, 4], [4, 5], [5, 4], [5, 5], [3, 6], [6, 3], [3, 5], [5, 3]],
+  easy:   [[4, 4], [4, 5], [5, 4], [3, 6], [6, 3], [3, 5], [5, 3], [4, 4]],
   medium: [[5, 5], [5, 6], [6, 5], [6, 6], [4, 6], [6, 4]],
   hard:   [[5, 6], [6, 5], [6, 6], [6, 7], [7, 6], [4, 7], [7, 4]],
 };
@@ -55,9 +55,9 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   // to fixed point, no guessing). Easy/Medium/Hard tune complexity through
   // grid size, singleton bias, and refinement settings.
   const diffSettings = {
-    easy:   { singletonBias: 0.65, preferSum: true,  removeFraction: 0.62, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: true,  disableWeaken: false, verifier: 'linear' },
-    medium: { singletonBias: 0.35, preferSum: false, removeFraction: 0.52, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' },
-    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.42, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false, verifier: 'linear' },
+    easy:   { singletonBias: 0.45, preferSum: true,  removeFraction: 0.62, shapes: SHAPES_BY_DIFFICULTY.easy,   disableMerge: false, disableWeaken: false, verifier: 'linear', eqGrowBias: 0.92, preserveEq: true, preserveNeq: true },
+    medium: { singletonBias: 0.35, preferSum: false, removeFraction: 0.52, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear', eqGrowBias: 0.45, preserveEq: true, preserveNeq: true },
+    hard:   { singletonBias: 0.15, preferSum: false, removeFraction: 0.42, shapes: SHAPES_BY_DIFFICULTY.hard,   disableMerge: false, disableWeaken: false, verifier: 'linear', eqGrowBias: 0.25, preserveEq: true, preserveNeq: true },
   }[difficulty] || { singletonBias: 0.35, preferSum: false, removeFraction: 0.52, shapes: SHAPES_BY_DIFFICULTY.medium, disableMerge: false, disableWeaken: false, verifier: 'linear' };
   // Default verifier: brute-force "exactly one solution". Generation is slow
   // (hundreds of ms to tens of seconds per puzzle) but produces well-defined
@@ -71,8 +71,13 @@ export function generatePuzzle(rng = Math.random, opts = {}) {
   const effectiveVerifier = diffSettings.verifier || verifier;
   const verify = (puzzle) => {
     if (effectiveVerifier === 'linear') {
-      // Pure forward propagation only — no case-splitting allowed.
-      return solveBounded(puzzle, 0).status === 'solved';
+      const needCount = typeof diffSettings.maxRun === 'number';
+      const r = solveBounded(puzzle, 0, needCount ? { count: true } : {});
+      if (r.status !== 'solved') return false;
+      // Optional bound: reject puzzles where any run between consecutive
+      // placements exceeds diffSettings.maxRun inferences.
+      if (needCount && r.counters.maxRun > diffSettings.maxRun) return false;
+      return true;
     }
     if (effectiveVerifier === 'lookahead') {
       return solveBounded(puzzle, depth).status === 'solved';
@@ -174,7 +179,7 @@ function sampleStructure(rng, diffSettings) {
   }
 
   // Sample a region partition by random flood-fill.
-  const regionAssignment = growRegions(cells, cellAtRC, W, H, rng, diffSettings);
+  const regionAssignment = growRegions(cells, cellAtRC, W, H, rng, diffSettings, cellValue);
   if (!regionAssignment) return null;
 
   return {
@@ -312,13 +317,14 @@ function shuffle(arr, rng) {
   }
 }
 
-function growRegions(cells, cellAtRC, W, H, rng, diffSettings) {
+function growRegions(cells, cellAtRC, W, H, rng, diffSettings, cellValue) {
   const N = cells.length;
   const region = new Int32Array(N);
   region.fill(-1);
 
   // Random target sizes — singleton bias depends on difficulty.
   const sb = diffSettings ? diffSettings.singletonBias : 0.40;
+  const eqBias = (diffSettings && typeof diffSettings.eqGrowBias === 'number') ? diffSettings.eqGrowBias : 0;
   const remaining = 1 - sb;
   const t1 = sb;
   const t2 = t1 + remaining * 0.50;
@@ -362,10 +368,25 @@ function growRegions(cells, cellAtRC, W, H, rng, diffSettings) {
     if (region[seed] >= 0) continue;
     const target = pickTargetSize();
     region[seed] = regionId;
+    const seedValue = cellValue ? cellValue[seed] : null;
+    // With probability eqBias, this region grows strictly along same-value cells
+    // — guaranteeing it's all-equal (→ eq constraint). If no same-value frontier
+    // cell exists, growth halts (region may end up smaller than its target).
+    const strictEq = eqBias > 0 && cellValue !== undefined && rng() < eqBias;
     const frontier = neighbors(seed).filter((n) => region[n] < 0);
     let size = 1;
     while (size < target && frontier.length) {
-      const idx = Math.floor(rng() * frontier.length);
+      let idx;
+      if (strictEq) {
+        const sameVal = [];
+        for (let i = 0; i < frontier.length; i++) {
+          if (cellValue[frontier[i]] === seedValue) sameVal.push(i);
+        }
+        if (sameVal.length === 0) break;
+        idx = sameVal[Math.floor(rng() * sameVal.length)];
+      } else {
+        idx = Math.floor(rng() * frontier.length);
+      }
       const next = frontier.splice(idx, 1)[0];
       if (region[next] >= 0) continue;
       region[next] = regionId;
@@ -472,6 +493,8 @@ function refineRegions(puzzle, rng, verify, diffSettings) {
   const preferSum = diffSettings ? diffSettings.preferSum : false;
   const disableMerge = diffSettings ? diffSettings.disableMerge : false;
   const disableWeaken = diffSettings ? diffSettings.disableWeaken : false;
+  const preserveEq = !!(diffSettings && diffSettings.preserveEq);
+  const preserveNeq = !!(diffSettings && diffSettings.preserveNeq);
 
   // Pass 1: greedy region-merging — at most one successful merge per outer pass.
   // Skipped entirely on Easy difficulty so regions stay small.
@@ -516,6 +539,10 @@ function refineRegions(puzzle, rng, verify, diffSettings) {
     for (const ri of order) {
       const region = puzzle.regions[ri];
       if (!region) continue;
+      // Preserve eq/neq regions verbatim — they're flavor signals that
+      // weakening would just collapse into another sum/lt/gt.
+      if (preserveEq && region.constraint.kind === 'eq') continue;
+      if (preserveNeq && region.constraint.kind === 'neq') continue;
       let candidates = weakerCandidates(region, puzzle.solution.cellValue);
       if (preferSum) {
         // Try sum candidates first, then a couple of random others.

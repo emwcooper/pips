@@ -5,9 +5,9 @@ import { el, clear } from './dom.js';
 import { describeConstraint } from '../puzzle/checker.js';
 
 const PALETTE = [
-  '#ffe8c2', '#d6f0d8', '#d2e6f7', '#fadce4',
-  '#eadcf5', '#fff4bc', '#d8efea', '#f7dcc7',
-  '#e8e0c4', '#dde7d2', '#e9d4d2', '#d6dff5',
+  '#ffae4a', '#7fcf8c', '#6fb0e0', '#ed7e9e',
+  '#b48cd8', '#ffd02e', '#6fc4b3', '#e69466',
+  '#bfa860', '#9ab578', '#bf7f7a', '#7e93d8',
 ];
 
 /**
