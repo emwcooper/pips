@@ -1,5 +1,8 @@
 :root {
-  --cell: 56px;
+  /* Cell size scales with viewport width on small screens so the board and
+     tray fit on phones. Floor at 40px to keep touch targets usable; ceiling
+     at 56px so wide screens don't grow boards beyond the design. */
+  --cell: clamp(40px, 12vw, 56px);
   --bg: #faf6ef;
   --board-bg: #ece5d4;
   --grid-line: rgba(0, 0, 0, 0.10);
@@ -23,6 +26,7 @@ body {
   color: #222;
   -webkit-user-select: none;
   user-select: none;
+  overflow-x: hidden;
 }
 
 #app {
@@ -35,6 +39,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   padding: 6px 4px 18px;
 }
 .header h1 {
@@ -45,8 +51,11 @@ body {
 }
 .header-controls {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  row-gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .timer {
   font-variant-numeric: tabular-nums;
@@ -346,4 +355,17 @@ button:active { background: #e7dfb7; }
 }
 @keyframes celebrate-fadeout {
   to { opacity: 0; }
+}
+
+/* ---- Narrow viewports (phones) ---- */
+@media (max-width: 480px) {
+  #app { padding: 8px; }
+  .header { padding: 4px 2px 12px; }
+  .header h1 { font-size: 22px; }
+  .header-controls { gap: 6px; }
+  button { padding: 6px 9px; font-size: 13px; }
+  .difficulty .diff-btn { padding: 6px 8px; font-size: 12px; }
+  .timer { font-size: 16px; min-width: 44px; }
+  .board-wrap { padding: 8px; }
+  .stats-panel { width: 100%; max-width: 360px; padding: 14px; }
 }

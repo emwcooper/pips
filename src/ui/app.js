@@ -125,7 +125,7 @@ export function startApp() {
     puzzle.cellAtRC = Int32Array.from(puzzle.cellAtRC);
     puzzle.solution.cellValue = Uint8Array.from(puzzle.solution.cellValue);
 
-    state = newAppState(puzzle);
+    state = newAppState(puzzle, trayEl.clientWidth);
     boardRenderInfo = renderBoard(boardEl, puzzle);
 
     // Tray gets fresh DOM; pieces are appended directly with their own elements.
@@ -375,14 +375,18 @@ export function startApp() {
   requestPuzzle();
 }
 
-function newAppState(puzzle) {
+function newAppState(puzzle, trayWidthPx) {
   /** @type {Array<{id:string,a:number,b:number,flipped:boolean,orientation:string,placedSlot:number|null,trayX:number,trayY:number,el:HTMLElement}>} */
   const pieces = [];
   let n = 0;
   const cellPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell')) || 56;
   const HSPACE = 2 * cellPx + 10;
   const VSPACE = cellPx + 10;
-  const COLS = 4;
+  // Pack as many domino columns as fit into the actual tray width. Falls back
+  // to 4 if we couldn't measure (e.g., tray not yet laid out). The leading +12
+  // offset matches the padding used below for trayX.
+  const trayInner = (trayWidthPx || 720) - 24;
+  const COLS = Math.max(1, Math.min(4, Math.floor(trayInner / HSPACE)));
   for (let k = 0; k < 49; k++) {
     const count = puzzle.bag[k] | 0;
     if (!count) continue;
