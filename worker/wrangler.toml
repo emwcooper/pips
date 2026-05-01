@@ -1,0 +1,12 @@
+name = "pips-stats"
+main = "src/index.js"
+compatibility_date = "2025-04-30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pips-stats"
+# database_id is filled in after `wrangler d1 create pips-stats`.
+database_id = "32747129-f8aa-4d20-ae67-f306d79d4007"
+
+[vars]
+ALLOWED_ORIGIN = "https://emwcooper.github.io"

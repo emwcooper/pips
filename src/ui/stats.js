@@ -2,6 +2,7 @@
 
 import { el, clear } from './dom.js';
 import { computedStats, resetStats } from '../stats/storage.js';
+import { fetchGlobalHistogram, STATS_API_URL } from '../stats/global.js';
 
 const BINS = [
   { label: '<30s', max: 30_000 },
@@ -28,7 +29,25 @@ export function renderStats(panel, onRequestNew) {
     section.appendChild(row('Win rate', s.winRate == null ? '—' : `${Math.round(s.winRate * 100)}%`));
     section.appendChild(row('Avg win time', s.avgMs == null ? '—' : formatMs(s.avgMs)));
     section.appendChild(row('Fastest win', s.fastestMs == null ? '—' : formatMs(s.fastestMs)));
-    section.appendChild(el('div', { class: 'histogram' }, histogramSvg(s.winTimesMs)));
+    section.appendChild(el('div', { class: 'histogram-label' }, 'Your times'));
+    section.appendChild(el('div', { class: 'histogram' }, histogramSvg(binTimes(s.winTimesMs))));
+    if (STATS_API_URL) {
+      const globalLabel = el('div', { class: 'histogram-label' }, 'Global times (loading…)');
+      const globalSlot = el('div', { class: 'histogram' });
+      section.appendChild(globalLabel);
+      section.appendChild(globalSlot);
+      // Fire async; render in place when it returns. Failures fall back to a
+      // small note so the panel never looks broken.
+      fetchGlobalHistogram(diff).then((data) => {
+        if (!data) {
+          globalLabel.textContent = 'Global times (offline)';
+          return;
+        }
+        const noun = data.total === 1 ? 'solve' : 'solves';
+        globalLabel.textContent = `Global times (${data.total.toLocaleString()} ${noun})`;
+        globalSlot.appendChild(histogramSvg(data.counts));
+      });
+    }
     panel.appendChild(section);
   }
 
@@ -48,11 +67,15 @@ function row(label, value) {
   return el('div', { class: 'stat-row' }, el('span', {}, label), el('span', {}, value));
 }
 
-function histogramSvg(times) {
+function binTimes(times) {
   const counts = BINS.map(() => 0);
   for (const t of times) {
     for (let i = 0; i < BINS.length; i++) if (t < BINS[i].max) { counts[i]++; break; }
   }
+  return counts;
+}
+
+function histogramSvg(counts) {
   const W = 280, H = 140;
   const pad = 24;
   const max = Math.max(1, ...counts);

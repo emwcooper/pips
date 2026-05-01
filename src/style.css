@@ -287,8 +287,9 @@ button:active { background: #e7dfb7; }
 .stats-section-title { margin: 0 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; }
 .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
 .stat-row span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
-.histogram { margin-top: 10px; }
+.histogram { margin-top: 4px; }
 .histogram svg { display: block; }
+.histogram-label { margin-top: 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #777; }
 .stats-actions { margin-top: 12px; }
 .stats-actions button { font-size: 12px; padding: 4px 8px; }
 

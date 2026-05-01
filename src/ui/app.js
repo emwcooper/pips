@@ -11,6 +11,7 @@ import { checkSolution } from '../puzzle/checker.js';
 import { decodeKey } from '../puzzle/domino.js';
 import { generatePuzzle } from '../puzzle/generator.js';
 import { recordWin, recordGiveUp, loadDifficulty, saveDifficulty } from '../stats/storage.js';
+import { reportWinToGlobal } from '../stats/global.js';
 import { renderStats } from './stats.js';
 import { showCelebration } from './celebrate.js';
 import { clear } from './dom.js';
@@ -233,6 +234,7 @@ export function startApp() {
         const elapsed = Date.now() - state.startedAt;
         stopTimer();
         const winInfo = recordWin(elapsed, difficulty);
+        reportWinToGlobal(difficulty, elapsed);
         let msg = `Solved in ${formatMs(elapsed)}!`;
         if (winInfo.totalWins >= 3) {
           msg += `  ·  ${winInfo.percentile}th percentile (${difficulty})`;
