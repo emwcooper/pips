@@ -18,7 +18,16 @@ const DIFFICULTY_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
 export function renderStats(panel, onRequestNew) {
   clear(panel);
-  panel.appendChild(el('h2', {}, 'Stats'));
+  const header = el('div', { class: 'stats-header' });
+  header.appendChild(el('h2', {}, 'Stats'));
+  const closeBtn = el('button', { type: 'button', class: 'stats-close', 'aria-label': 'Close' }, '×');
+  closeBtn.addEventListener('click', () => {
+    // Reuse the existing toggle-stats handler so panel state stays consistent.
+    const toggle = document.getElementById('toggle-stats');
+    if (toggle) toggle.click();
+  });
+  header.appendChild(closeBtn);
+  panel.appendChild(header);
 
   for (const diff of ['easy', 'medium', 'hard']) {
     const s = computedStats(diff);

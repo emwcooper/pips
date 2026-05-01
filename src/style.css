@@ -281,7 +281,18 @@ button:active { background: #e7dfb7; }
   z-index: 10;
 }
 .stats-panel.hidden { transform: translateX(100%); pointer-events: none; }
+.stats-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .stats-panel h2 { margin: 0 0 8px; font-size: 18px; }
+.stats-close {
+  background: transparent;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: #555;
+}
+.stats-close:hover { color: #000; }
 .stats-section { margin-top: 16px; padding-top: 10px; border-top: 1px solid #e5dec3; }
 .stats-section:first-of-type { margin-top: 4px; padding-top: 0; border-top: none; }
 .stats-section-title { margin: 0 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; }
