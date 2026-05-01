@@ -379,14 +379,16 @@ function newAppState(puzzle, trayWidthPx) {
   /** @type {Array<{id:string,a:number,b:number,flipped:boolean,orientation:string,placedSlot:number|null,trayX:number,trayY:number,el:HTMLElement}>} */
   const pieces = [];
   let n = 0;
-  const cellPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell')) || 56;
+  const cellPx = resolveCellPx();
   const HSPACE = 2 * cellPx + 10;
   const VSPACE = cellPx + 10;
-  // Pack as many domino columns as fit into the actual tray width. Falls back
-  // to 4 if we couldn't measure (e.g., tray not yet laid out). The leading +12
-  // offset matches the padding used below for trayX.
+  // Pack as many domino columns as fit into the actual tray width.
   const trayInner = (trayWidthPx || 720) - 24;
   const COLS = Math.max(1, Math.min(4, Math.floor(trayInner / HSPACE)));
+  // Center the packed block inside the tray instead of leaving empty space to
+  // the right. Block width is (COLS-1) gaps + last piece width.
+  const blockWidth = (COLS - 1) * HSPACE + 2 * cellPx;
+  const xOffset = Math.max(12, Math.floor((trayInner - blockWidth) / 2) + 12);
   for (let k = 0; k < 49; k++) {
     const count = puzzle.bag[k] | 0;
     if (!count) continue;
@@ -400,7 +402,7 @@ function newAppState(puzzle, trayWidthPx) {
         orientation: 'horizontal',
         placedSlot: null,
         locked: false,
-        trayX: (idx % COLS) * HSPACE + 12,
+        trayX: (idx % COLS) * HSPACE + xOffset,
         trayY: Math.floor(idx / COLS) * VSPACE + 12,
         el: null,
       };
@@ -414,6 +416,18 @@ function newAppState(puzzle, trayWidthPx) {
     startedAt: Date.now(),
     won: false,
   };
+}
+
+// --cell is a clamp() expression, so getPropertyValue returns the unresolved
+// text. Read the resolved pixel value by setting `width: var(--cell)` on a
+// throwaway element and reading its computed width.
+function resolveCellPx() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:var(--cell);height:var(--cell);';
+  document.body.appendChild(probe);
+  const w = probe.getBoundingClientRect().width;
+  probe.remove();
+  return w || 56;
 }
 
 function computeCellValues(state) {

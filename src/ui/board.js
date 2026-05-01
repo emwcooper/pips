@@ -68,7 +68,11 @@ export function renderBoard(container, puzzle) {
   }
 
   // Precompute geometry once; getComputedStyle is too slow for the drag hot loop.
-  const cellPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell')) || 56;
+  // Note: --cell is a clamp() expression. getPropertyValue returns the raw text
+  // ("clamp(...)"), so parseFloat would yield the floor (40), not the resolved
+  // value. Measure an actual cell instead — its width is set via var(--cell),
+  // so getBoundingClientRect gives the true rendered pixel size.
+  const cellPx = (cellEls.find(Boolean)?.getBoundingClientRect().width) || 56;
 
   // Constraint badges anchored at the region's top-left cell corner (so a placed
   // domino, which sits in cell-center, doesn't fully cover the label). z-index
