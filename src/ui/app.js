@@ -11,9 +11,10 @@ import { checkSolution } from '../puzzle/checker.js';
 import { decodeKey } from '../puzzle/domino.js';
 import { generatePuzzle } from '../puzzle/generator.js';
 import { recordWin, recordGiveUp, loadDifficulty, saveDifficulty } from '../stats/storage.js';
-import { reportWinToGlobal } from '../stats/global.js';
+import { reportWinToGlobal, flushPendingGlobalSync } from '../stats/global.js';
 import { renderStats } from './stats.js';
 import { showCelebration } from './celebrate.js';
+import { showInstructions } from './instructions.js';
 import { clear } from './dom.js';
 
 export function startApp() {
@@ -24,6 +25,7 @@ export function startApp() {
   const newBtn = document.getElementById('new-puzzle');
   const clearBtn = document.getElementById('clear-all');
   const statsBtn = document.getElementById('toggle-stats');
+  const instructionsBtn = document.getElementById('show-instructions');
   const statsPanel = document.getElementById('stats-panel');
   const loadingEl = document.getElementById('loading');
 
@@ -160,9 +162,16 @@ export function startApp() {
   // ---------- piece operations (move-in-place, never recreate the element) ----------
 
   function placePieceOnBoard(piece, slotIdx) {
-    // If another piece already occupies this slot, evict it back to its tray spot.
-    const occupant = state.pieces.find((p) => p.placedSlot === slotIdx && p !== piece);
-    if (occupant) {
+    // Slots are pairs of cells, and adjacent slots share a cell. Evict any
+    // already-placed piece whose slot overlaps the new placement (not just
+    // the same slotIdx). Without this, two pieces on overlapping slots end
+    // up visually stacked on the shared cell.
+    const newCells = state.puzzle.slots[slotIdx];
+    for (const occupant of state.pieces) {
+      if (occupant === piece || occupant.placedSlot === null) continue;
+      const [a, b] = state.puzzle.slots[occupant.placedSlot];
+      const overlaps = a === newCells[0] || a === newCells[1] || b === newCells[0] || b === newCells[1];
+      if (!overlaps) continue;
       occupant.placedSlot = null;
       occupant.locked = false;
       occupant.el.classList.remove('locked');
@@ -278,7 +287,17 @@ export function startApp() {
       const p = state.pieces.find((pp) => pp.id === id);
       return p ? p.placedSlot : null;
     },
-    isSlotOccupied: (slotIdx) => state.pieces.some((p) => p.placedSlot === slotIdx),
+    // "Occupied" here means "no-snap": the slot is blocked when a *locked*
+    // piece's cells overlap. Unlocked overlapping pieces don't block — they'll
+    // be evicted on drop by placePieceOnBoard.
+    isSlotOccupied: (slotIdx) => {
+      const cells = state.puzzle.slots[slotIdx];
+      return state.pieces.some((p) => {
+        if (!p.locked || p.placedSlot === null) return false;
+        const [a, b] = state.puzzle.slots[p.placedSlot];
+        return a === cells[0] || a === cells[1] || b === cells[0] || b === cells[1];
+      });
+    },
     onPlace: (pieceId, slotIdx) => {
       const piece = state.pieces.find((p) => p.id === pieceId);
       if (!piece) return;
@@ -318,6 +337,10 @@ export function startApp() {
       const targets = unlockedPlaced.length > 0 ? unlockedPlaced : placed;
       for (const piece of targets) returnPieceToTray(piece);
     });
+  }
+
+  if (instructionsBtn) {
+    instructionsBtn.addEventListener('click', () => showInstructions());
   }
 
   statsBtn.addEventListener('click', () => {
@@ -375,6 +398,11 @@ export function startApp() {
 
   // Kick off.
   requestPuzzle();
+
+  // Catch-up: send any local wins not yet reported to the global backend
+  // (e.g. earned before global stats existed, or while offline). Runs
+  // in the background — never blocks the UI.
+  flushPendingGlobalSync();
 }
 
 function newAppState(puzzle, trayWidthPx) {

@@ -23,6 +23,10 @@ const PER_DIFF_DEFAULT = {
   giveUps: 0,
   fastestMs: null,
   winTimesMs: [],
+  // How many entries of winTimesMs have been successfully POSTed to the global
+  // stats backend. Defaults to 0 so existing local-only history backfills on
+  // first run after global integration shipped.
+  globalSyncedCount: 0,
 };
 
 function emptyStats() {
@@ -84,6 +88,25 @@ export function recordWin(elapsedMs, difficulty) {
   // "+1" includes yourself: fastest of N → 100, slowest of N → 100/N (not 0).
   const percentile = Math.ceil((100 * (beats + 1)) / totalWins);
   return { isNewFastest, wasFirst, percentile, totalWins };
+}
+
+/**
+ * Returns up to N unsynced wins for a difficulty (the entries of winTimesMs
+ * past globalSyncedCount). Caller posts them and then bumps the synced count.
+ */
+export function getPendingGlobalSync(difficulty) {
+  const s = loadStats()[difficulty];
+  if (!s) return [];
+  const synced = s.globalSyncedCount | 0;
+  return s.winTimesMs.slice(synced);
+}
+
+export function bumpGlobalSyncedCount(difficulty, by = 1) {
+  const all = loadStats();
+  const s = all[difficulty];
+  if (!s) return;
+  s.globalSyncedCount = Math.min((s.globalSyncedCount | 0) + by, s.winTimesMs.length);
+  saveStats(all);
 }
 
 export function recordGiveUp(difficulty) {

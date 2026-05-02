@@ -369,6 +369,69 @@ button:active { background: #e7dfb7; }
   to { opacity: 0; }
 }
 
+/* ---- Instructions modal ---- */
+#show-instructions {
+  font-weight: 700;
+  width: 32px;
+  padding: 6px 0;
+  border-radius: 50%;
+}
+.instructions-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms;
+  z-index: 500;
+}
+.instructions-overlay.show { opacity: 1; pointer-events: auto; }
+.instructions-card {
+  position: relative;
+  background: #fffaf0;
+  border-radius: 12px;
+  padding: 22px 24px;
+  max-width: 460px;
+  width: calc(100% - 32px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.instructions-card h2 { margin: 0 0 8px; font-size: 20px; }
+.instructions-card h3 { margin: 16px 0 6px; font-size: 15px; }
+.instructions-card p, .instructions-card ul { margin: 8px 0; }
+.instructions-card ul { padding-left: 20px; }
+.instructions-card li { margin-bottom: 4px; }
+.instructions-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: #555;
+}
+.instructions-close:hover { color: #000; }
+.instructions-ok {
+  margin-top: 12px;
+  display: block;
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  padding: 8px;
+  font-weight: 600;
+}
+.instructions-ok:hover { background: #9b4c2c; }
+
 /* ---- Narrow viewports (phones) ---- */
 @media (max-width: 480px) {
   #app { padding: 8px; }
